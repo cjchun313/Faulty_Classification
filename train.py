@@ -23,7 +23,7 @@ def train(model, train_loader, optimizer, epoch, DEVICE):
         loss.backward()
         optimizer.step()
 
-    print('Epoch: {}\tLoss: {:.6f}'.format(epoch, loss.item()))
+    #print('Epoch: {}\tLoss: {:.6f}'.format(epoch, loss.item()))
 
 
 def evaluate(model, test_loader, DEVICE):
@@ -41,6 +41,7 @@ def evaluate(model, test_loader, DEVICE):
 
     test_loss /= len(test_loader.dataset)
     test_accuracy = 100. * correct / len(test_loader.dataset)
+
     return test_loss, test_accuracy
 
 def main(args):
@@ -58,11 +59,12 @@ def main(args):
     for epoch in tqdm(range(args.epoch + 1)):
         train(model, train_loader, optimizer, epoch, DEVICE)
         loss, acc = evaluate(model, val_loader, DEVICE)
+        print('epoch:{}\tval loss:{:.6f}\tval acc:{:.4f}'.format(epoch, loss, acc))
         if acc > acc_prev:
             acc_prev = acc
 
-            savePath = './pth/resnet_model-{:4d}-{:.4f}.pth'.format(epoch, loss)
-            torch.save(model.state_dict(), savePath)
+            savepath = '../pth/resnet_model-{:d}-{:.4f}.pth'.format(epoch, acc)
+            torch.save(model.state_dict(), savepath)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
