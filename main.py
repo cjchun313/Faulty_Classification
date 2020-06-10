@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 import argparse
 
-from data_loader import data_loader
+from data_loader import data_loader, target_data_loader
 from models.resnet import ResNet18
 
 
@@ -45,26 +45,36 @@ def evaluate(model, test_loader, DEVICE):
     return test_loss, test_accuracy
 
 def main(args):
-    train_loader = data_loader(train=True, batch_size=args.batch_size)
-    val_loader = data_loader(train=False)
+    if args.train is True:
+        train_loader = data_loader(train=True, batch_size=args.batch_size)
+        val_loader = data_loader(train=False)
+    else:
+        test_loader = target_data_loader(target_idx=args.target_idx, batch_size=args.batch_size)
 
     USE_CUDA = torch.cuda.is_available()
     DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
     print('device:', DEVICE)
 
-    model = ResNet18().to(DEVICE)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    if args.train is True:
+        model = ResNet18().to(DEVICE)
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    acc_prev = 0
-    for epoch in tqdm(range(args.epoch + 1)):
-        train(model, train_loader, optimizer, epoch, DEVICE)
-        loss, acc = evaluate(model, val_loader, DEVICE)
-        print('epoch:{}\tval loss:{:.6f}\tval acc:{:.4f}'.format(epoch, loss, acc))
-        if acc > acc_prev:
-            acc_prev = acc
+        acc_prev = 0
+        for epoch in tqdm(range(args.epoch + 1)):
+            train(model, train_loader, optimizer, epoch, DEVICE)
+            loss, acc = evaluate(model, val_loader, DEVICE)
+            print('epoch:{}\tval loss:{:.6f}\tval acc:{:2.4f}'.format(epoch, loss, acc))
+            if acc > acc_prev:
+                acc_prev = acc
 
-            savepath = '../pth/resnet_model-{:d}-{:.4f}.pth'.format(epoch, acc)
-            torch.save(model.state_dict(), savepath)
+                savepath = '../pth/resnet_model-{:d}-{:.4f}.pth'.format(epoch, acc)
+                torch.save(model.state_dict(), savepath)
+    else:
+        model = ResNet18().to(DEVICE)
+        model.load_state_dict(torch.load('../pth/resnet_model-59-98.5250.pth'))
+
+        loss, acc = evaluate(model, test_loader, DEVICE)
+        print('test loss:{:.6f}\ttest acc:{:2.4f}'.format(loss, acc))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -76,7 +86,17 @@ if __name__ == '__main__':
     parser.add_argument(
         '--epoch',
         help='number of training iterations',
-        default=1000,
+        default=200,
+        type=int)
+    parser.add_argument(
+        '--train',
+        help='train if true, or evaluate',
+        default=False,
+        type=bool)
+    parser.add_argument(
+        '--target_idx',
+        help='target data index, dont care if train is true',
+        default=0,
         type=int)
 
     args = parser.parse_args()

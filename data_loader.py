@@ -11,9 +11,23 @@ def data_loader(train=True, batch_size=64, shuffle=True, num_workers=0):
     dl = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     return dl
 
+def target_data_loader(target_idx=0, batch_size=64, shuffle=True, num_workers=0):
+    composed = transforms.Compose([transforms.ToTensor()])
+    if target_idx == 0:
+        dataset = datasets.ImageFolder(root='../db/data_target1/', transform=composed)
+    elif target_idx == 1:
+        dataset = datasets.ImageFolder(root='../db/data_target2/', transform=composed)
+    elif target_idx == 2:
+        dataset = datasets.ImageFolder(root='../db/data_target3/', transform=composed)
+    else:
+        dataset = datasets.ImageFolder(root='../db/data_target1/', transform=composed)
+
+    dl = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+    return dl
+
 if __name__ == "__main__":
     composed = transforms.Compose([transforms.ToTensor()])
-    train_dataset = datasets.ImageFolder(root='../db/data_source/train/', transform=composed)
+    train_dataset = datasets.ImageFolder(root='../db/data_target1/train/', transform=composed)
     val_dataset = datasets.ImageFolder(root='../db/data_source/val/', transform=composed)
     print(train_dataset, val_dataset)
 
