@@ -5,11 +5,11 @@ from tqdm import tqdm
 
 import argparse
 
-from data_loader import data_loader, target_data_loader
+from data_loader import data_loader
 from models.resnet import ResNet18
 
 
-def train(model, train_loader, optimizer, epoch, DEVICE):
+def train(model, train_loader, optimizer, DEVICE):
     model.train()
 
     for batch_idx, samples in enumerate(train_loader):
@@ -24,7 +24,6 @@ def train(model, train_loader, optimizer, epoch, DEVICE):
         optimizer.step()
 
     #print('Epoch: {}\tLoss: {:.6f}'.format(epoch, loss.item()))
-
 
 def evaluate(model, test_loader, DEVICE):
     model.eval()
@@ -46,10 +45,10 @@ def evaluate(model, test_loader, DEVICE):
 
 def main(args):
     if args.train is True:
-        train_loader = data_loader(train=True, batch_size=args.batch_size)
-        val_loader = data_loader(train=False)
+        train_loader = data_loader(train=True, target_idx=0, shuffle=args.shuffle, batch_size=args.batch_size)
+        val_loader = data_loader(train=False, target_idx=0, shuffle=args.shuffle, batch_size=args.batch_size)
     else:
-        test_loader = target_data_loader(target_idx=args.target_idx, batch_size=args.batch_size)
+        test_loader = data_loader(train=args.train, target_idx=args.target_idx, shuffle=args.shuffle, batch_size=args.batch_size)
 
     USE_CUDA = torch.cuda.is_available()
     DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
@@ -61,7 +60,7 @@ def main(args):
 
         acc_prev = 0
         for epoch in tqdm(range(args.epoch + 1)):
-            train(model, train_loader, optimizer, epoch, DEVICE)
+            train(model, train_loader, optimizer, DEVICE)
             loss, acc = evaluate(model, val_loader, DEVICE)
             print('epoch:{}\tval loss:{:.6f}\tval acc:{:2.4f}'.format(epoch, loss, acc))
             if acc > acc_prev:
@@ -86,8 +85,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--epoch',
         help='number of training iterations',
-        default=200,
+        default=1,
         type=int)
+    parser.add_argument(
+        '--shuffle',
+        help='is shuffle?',
+        default=True,
+        type=bool)
     parser.add_argument(
         '--train',
         help='train if true, or evaluate',
