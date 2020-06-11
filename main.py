@@ -59,7 +59,7 @@ def main(args):
         optimizer = optim.Adam(model.parameters(), lr=0.001)
 
         acc_prev = 0
-        for epoch in tqdm(range(args.epoch + 1)):
+        for epoch in tqdm(range(args.epoch)):
             train(model, train_loader, optimizer, DEVICE)
             loss, acc = evaluate(model, val_loader, DEVICE)
             print('epoch:{}\tval loss:{:.6f}\tval acc:{:2.4f}'.format(epoch, loss, acc))
@@ -89,14 +89,14 @@ if __name__ == '__main__':
         type=int)
     parser.add_argument(
         '--shuffle',
-        help='is shuffle?',
-        default=True,
-        type=bool)
+        help='if 1, shuffle',
+        default=1,
+        type=int)
     parser.add_argument(
         '--train',
-        help='train if true, or evaluate',
-        default=False,
-        type=bool)
+        help='if 1, train, or evaluate',
+        default=1,
+        type=int)
     parser.add_argument(
         '--target_idx',
         help='target data index, dont care if train is true',
