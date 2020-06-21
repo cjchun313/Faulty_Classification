@@ -123,5 +123,6 @@ def test():
     y = net(torch.randn(1, 3, 224, 224))
     print(y.size())
 
+
 if __name__ == "__main__":
     test()

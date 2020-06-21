@@ -1,7 +1,7 @@
 from torchvision import transforms, datasets
 from torch.utils.data import DataLoader
 
-def data_loader(train=True, target_idx=0, batch_size=64, shuffle=True, num_workers=0):
+def data_loader(size=1, target_idx=0, batch_size=64, shuffle=True, num_workers=0):
     path = '../db/'
     if target_idx == 0:
         path += 'data_source/'
@@ -14,7 +14,7 @@ def data_loader(train=True, target_idx=0, batch_size=64, shuffle=True, num_worke
     else:
         path += 'data_source/'
 
-    if train is True:
+    if size == 1:
         path += 'train/'
     else:
         path += 'val/'
@@ -26,8 +26,8 @@ def data_loader(train=True, target_idx=0, batch_size=64, shuffle=True, num_worke
     return dl
 
 if __name__ == "__main__":
-    train_loader = data_loader(train=True, target_idx=0, shuffle=True, batch_size=64)
-    val_loader = data_loader(train=False, target_idx=0, shuffle=True, batch_size=64)
+    train_loader = data_loader(size=1, target_idx=0, shuffle=True, batch_size=64)
+    val_loader = data_loader(size=0, target_idx=0, shuffle=True, batch_size=64)
     for batch_idx, samples in enumerate(train_loader):
         data, target = samples
         print(data.shape, target.shape)
