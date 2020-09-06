@@ -1,159 +1,183 @@
-import torch
-import torch.nn.functional as F
-import torch.optim as optim
-from tqdm import tqdm
-
 import argparse
 
-from data_loader import data_loader
 from models.resnet import ResNet18
-from freeze import freeze_model
 
-def train(model, train_loader, optimizer, DEVICE):
+import torch
+from torch import nn
+from torch.optim import Adam
+from torch.optim.lr_scheduler import StepLR
+
+from data_loader import ImagevDatasetForClassi
+from torch.utils.data import DataLoader
+
+
+
+USE_CUDA = torch.cuda.is_available()
+DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
+
+
+
+
+def train(model, train_loader, optimizer):
     model.train()
+    correct = 0
+    criterion = nn.CrossEntropyLoss().to(DEVICE)
 
     for batch_idx, samples in enumerate(train_loader):
         data, target = samples
-        data, target = data.to(DEVICE), target.to(DEVICE)
+        data, target = data.to(DEVICE, dtype=torch.float), target.to(DEVICE)
 
         output = model(data)
-        loss = F.cross_entropy(output, target)
+        loss = criterion(output, target)
+
+        prediction = output.max(1, keepdim=True)[1]
+        correct += prediction.eq(target.view_as(prediction)).sum().item()
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
+        print('Batch Index: {}\tLoss: {:.6f}'.format(batch_idx, loss.item()))
+
     #print('Epoch: {}\tLoss: {:.6f}'.format(epoch, loss.item()))
 
-def evaluate(model, test_loader, DEVICE):
+    train_loss = loss.item() / len(train_loader.dataset)
+    train_acc = 100. * correct / len(train_loader.dataset)
+
+    return train_loss, train_acc
+
+
+
+def evaluate(model, test_loader):
     model.eval()
-    test_loss = 0
     correct = 0
+    criterion = nn.CrossEntropyLoss().to(DEVICE)
 
     with torch.no_grad():
         for data, target in test_loader:
-            data, target = data.to(DEVICE), target.to(DEVICE)
+            data, target = data.to(DEVICE, dtype=torch.float), target.to(DEVICE)
+
             output = model(data)
-            test_loss += F.cross_entropy(output, target, reduction ='sum').item()
-            prediction = output.max(1, keepdim = True)[1]
+            loss = criterion(output, target)
+
+            prediction = output.max(1, keepdim=True)[1]
             correct += prediction.eq(target.view_as(prediction)).sum().item()
 
-    test_loss /= len(test_loader.dataset)
-    test_accuracy = 100. * correct / len(test_loader.dataset)
+    test_loss = loss.item() / len(test_loader.dataset)
+    test_acc = 100. * correct / len(test_loader.dataset)
 
-    return test_loss, test_accuracy
+    return test_loss, test_acc
+
+
+
+def save_model(modelpath, model, optimizer, scheduler):
+    state = {
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'scheduler': scheduler.state_dict()
+    }
+    torch.save(state, modelpath)
+
+    print('model saved')
+
+
+
+def load_model(modelpath, model, optimizer=None, scheduler=None):
+    state = torch.load(modelpath, map_location=torch.device(DEVICE))
+    model.load_state_dict(state['model'])
+    if optimizer is not None:
+        optimizer.load_state_dict(state['optimizer'])
+    if scheduler is not None:
+        scheduler.load_state_dict(state['scheduler'])
+
+    print('model loaded')
+
+
 
 def main(args):
-    if args.train == 1:
-        if args.target_size == 1:
-            train_loader = data_loader(size=1, target_idx=0, shuffle=args.shuffle, batch_size=args.batch_size)
-            val_loader = data_loader(size=0, target_idx=0, shuffle=args.shuffle, batch_size=args.batch_size)
-        else:
-            train_loader = data_loader(size=0, target_idx=0, shuffle=args.shuffle, batch_size=args.batch_size)
-            val_loader = data_loader(size=1, target_idx=0, shuffle=args.shuffle, batch_size=args.batch_size)
-    elif args.train == 2:
-        if args.target_size == 1:
-            train_loader = data_loader(size=1, target_idx=args.target_idx, shuffle=args.shuffle, batch_size=args.batch_size)
-            val_loader = data_loader(size=0, target_idx=args.target_idx, shuffle=args.shuffle, batch_size=args.batch_size)
-        else:
-            train_loader = data_loader(size=0, target_idx=args.target_idx, shuffle=args.shuffle, batch_size=args.batch_size)
-            val_loader = data_loader(size=1, target_idx=args.target_idx, shuffle=args.shuffle, batch_size=args.batch_size)
-    else:
-        if args.target_size == 1:
-            test_loader = data_loader(size=1, target_idx=args.target_idx, shuffle=args.shuffle, batch_size=args.batch_size)
-        else:
-            test_loader = data_loader(size=0, target_idx=args.target_idx, shuffle=args.shuffle, batch_size=args.batch_size)
+    # train
+    if args.mode == 'train':
+        train_dataset = ImagevDatasetForClassi(mode='train')
+        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=args.shuffle, num_workers=0)
 
-    USE_CUDA = torch.cuda.is_available()
-    DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
-    print('device:', DEVICE)
+        val_dataset = ImagevDatasetForClassi(mode='val')
+        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+        print(train_dataloader, val_dataloader)
 
-    if args.train == 1:
-        # source train
-        model = ResNet18().to(DEVICE)
-        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        model = ResNet18()
+        if torch.cuda.device_count() > 1:
+            print('multi gpu used!')
+            model = nn.DataParallel(model)
+        model = model.to(DEVICE)
 
-        acc_prev = 0
-        for epoch in tqdm(range(args.epoch)):
-            train(model, train_loader, optimizer, DEVICE)
-            loss, acc = evaluate(model, val_loader, DEVICE)
-            print('epoch:{}\tval loss:{:.6f}\tval acc:{:2.4f}'.format(epoch, loss, acc))
-            if acc > acc_prev:
-                acc_prev = acc
+        # set optimizer
+        optimizer = Adam([param for param in model.parameters() if param.requires_grad], lr=args.lr)
+        scheduler = StepLR(optimizer, step_size=10, gamma=0.8)
 
-                savepath = '../pth/resnet_model_source.pth'
-                torch.save(model.state_dict(), savepath)
-    elif args.train == 2:
-        # transfer learning
-        model = ResNet18().to(DEVICE)
-        model.load_state_dict(torch.load('../pth/resnet_model_source.pth', map_location=torch.device(DEVICE)))
-        model = freeze_model(model, num_layers=6)
-        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        acc_prev = 0.0
+        for epoch in range(args.epoch):
+            # train set
+            loss, acc = train(model, train_dataloader, optimizer)
+            # validate set
+            val_loss, val_acc = evaluate(model, val_dataloader)
 
-        acc_prev = 0
-        for epoch in tqdm(range(args.epoch)):
-            train(model, train_loader, optimizer, DEVICE)
-            loss, acc = evaluate(model, val_loader, DEVICE)
-            print('epoch:{}\tval loss:{:.6f}\tval acc:{:2.4f}'.format(epoch, loss, acc))
-            if acc > acc_prev:
-                acc_prev = acc
+            print('Epoch:{}\tTrain Loss:{:.6f}\tTrain Acc:{:2.4f}'.format(epoch, loss, acc))
+            print('Val Loss:{:.6f}\tVal Acc:{:2.4f}'.format(val_loss, val_acc))
 
-                savepath = '../pth/resnet_model_transfer_target' + str(args.target_idx) + '.pth'
-                torch.save(model.state_dict(), savepath)
-    else:
-        # evaluate
-        model = ResNet18().to(DEVICE)
-        if args.model_idx == 0:
-            model.load_state_dict(torch.load('../pth/resnet_model_source.pth', map_location=torch.device(DEVICE)))
-        elif args.model_idx == 1:
-            model.load_state_dict(torch.load('../pth/resnet_model_transfer_target1.pth', map_location=torch.device(DEVICE)))
-        elif args.model_idx == 2:
-            model.load_state_dict(torch.load('../pth/resnet_model_transfer_target2.pth', map_location=torch.device(DEVICE)))
-        elif args.model_idx == 3:
-            model.load_state_dict(torch.load('../pth/resnet_model_transfer_target3.pth', map_location=torch.device(DEVICE)))
-        else:
-            model.load_state_dict(torch.load('../pth/resnet_model_source.pth', map_location=torch.device(DEVICE)))
+            if val_acc > acc_prev:
+                acc_prev = val_acc
+                modelpath = '../pth/20200906/model-{:d}-{:.6f}-{:2.4f}.pth'.format(epoch, val_loss, val_acc)
+                save_model(modelpath, model, optimizer, scheduler)
 
-        loss, acc = evaluate(model, test_loader, DEVICE)
-        print('test loss:{:.6f}\ttest acc:{:2.4f}'.format(loss, acc))
+            # scheduler update
+            scheduler.step()
+    # evaluate
+    elif args.mode == 'evaluate':
+        val_dataset = ImagevDatasetForClassi(mode='val')
+        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+        print(val_dataloader)
+
+        model = ResNet18()
+        if torch.cuda.device_count() > 1:
+            print('multi gpu used!')
+            model = nn.DataParallel(model)
+        model = model.to(DEVICE)
+
+        modelpath = '../pth/20200906/model.pth'
+        load_model(model, modelpath)
+
+        test_loss, test_acc = evaluate(model, val_dataloader)
+        print('Test Loss:{:.6f}\tTest Acc:{:2.4f}'.format(test_loss, test_acc))
+
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--batch_size',
         help='the number of mini-batch samples',
-        default=64,
+        default=512,
         type=int)
     parser.add_argument(
         '--epoch',
         help='the number of training iterations',
-        default=1,
+        default=100,
         type=int)
+    parser.add_argument(
+        '--lr',
+        help='learning rate',
+        default=0.001,
+        type=float)
     parser.add_argument(
         '--shuffle',
-        help='if 1, shuffle is true',
-        default=1,
-        type=int)
+        help='True or False',
+        default=True,
+        type=bool)
     parser.add_argument(
-        '--train',
-        help='evaluation : 0, train : 1, transfer : 2',
-        default=2,
-        type=int)
-    parser.add_argument(
-        '--target_size',
-        help='1: big(16000), 0: small(4000)',
-        default=1,
-        type=int)
-    parser.add_argument(
-        '--target_idx',
-        help='0: source, 1: target1, 2: target2, 3: target3',
-        default=1,
-        type=int)
-    parser.add_argument(
-        '--model_idx',
-        help='0: source, 1: target1, 2: target2, 3: target3',
-        default=0,
-        type=int)
+        '--mode',
+        help='train or evaluate',
+        default='train',
+        type=str)
 
     args = parser.parse_args()
     print(args)

@@ -1,41 +1,69 @@
-from torchvision import transforms, datasets
+from glob import glob
+from tqdm import tqdm
+from PIL import Image
+import numpy as np
+
+import torch
+from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
-def data_loader(size=1, target_idx=0, batch_size=64, shuffle=True, num_workers=0):
-    path = '../db/'
-    if target_idx == 0:
-        path += 'data_source/'
-    elif target_idx == 1:
-        path += 'data_target1/'
-    elif target_idx == 2:
-        path += 'data_target2/'
-    elif target_idx == 3:
-        path += 'data_target3/'
-    else:
-        path += 'data_source/'
+class ImagevDatasetForClassi(Dataset):
+    def __init__(self, mode='train', transform=None, known_class=['Healthy', 'Drift', 'Mssing_by_blank', 'Outlier', 'Periodic'], unknown_class=['Randomly_Mssing', 'Square'], width=224, height=224):
+        self.mode = mode
+        self.transform = transform
+        self.width = width
+        self.height = height
 
-    if size == 1:
-        path += 'train/'
-    else:
-        path += 'val/'
+        path = '../db/data_source/'
+        if mode == 'train':
+            path += 'train/'
+        else:
+            path += 'val/'
 
-    composed = transforms.Compose([transforms.ToTensor()])
-    dataset = datasets.ImageFolder(root=path, transform=composed)
+        class_num = 0
+        self.x_data, self.y_data = [], []
+        for known in tqdm(known_class):
+            imgfiles = sorted(glob(path + known + '/*.jpg'))
+            for imgfile in imgfiles:
+                self.x_data.append(np.array(Image.open(imgfile)))
+                self.y_data.append(class_num)
 
-    dl = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
-    return dl
+            class_num += 1
+
+        '''
+        if mode == 'val':
+            for unknown in tqdm(unknown_class):
+                imgfiles = sorted(glob(path + unknown + '/*.jpg'))
+                for imgfile in imgfiles:
+                    self.x_data.append(np.array(Image.open(imgfile)))
+                    self.y_data.append(class_num)
+
+                #class_num += 1
+        '''
+
+        self.x_data = np.array(self.x_data)
+        self.y_data = np.array(self.y_data)
+        print(self.x_data.shape, self.y_data.shape)
+
+    def __len__(self):
+        return len(self.x_data)
+
+    def __getitem__(self, idx):
+        sample = torch.as_tensor(self.x_data[idx]).view(3, self.height, self.width), torch.as_tensor(self.y_data[idx])
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+
 
 if __name__ == "__main__":
-    train_loader = data_loader(size=1, target_idx=0, shuffle=True, batch_size=64)
-    val_loader = data_loader(size=0, target_idx=0, shuffle=True, batch_size=64)
+    train_dataset = ImagevDatasetForClassi(mode='train')
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=0)
     for batch_idx, samples in enumerate(train_loader):
         data, target = samples
         print(data.shape, target.shape)
-
-        break
-
-    for batch_idx, samples in enumerate(val_loader):
-        data, target = samples
-        print(data.shape, target.shape)
+        print(torch.max(data), torch.min(data))
+        print(torch.max(target), torch.min(target))
 
         break

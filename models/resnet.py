@@ -63,7 +63,7 @@ class Bottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=7):
+    def __init__(self, block, num_blocks, dropout_rate=0.3, num_classes=5):
         super(ResNet, self).__init__()
         self.in_planes = 16
         #print(block.expansion, num_blocks[0], num_blocks[1], num_blocks[2], num_blocks[3])
@@ -76,6 +76,7 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 128, num_blocks[3], stride=2)
         #self.linear = nn.Linear(256*block.expansion, num_classes)
         self.linear = nn.Linear(7 * 7 * 128, num_classes)
+        self.dropout = nn.Dropout2d(dropout_rate)
 
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1]*(num_blocks-1)
@@ -88,9 +89,13 @@ class ResNet(nn.Module):
     def forward(self, x):
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.layer1(out)
+        out = self.dropout(out)
         out = self.layer2(out)
+        out = self.dropout(out)
         out = self.layer3(out)
+        out = self.dropout(out)
         out = self.layer4(out)
+        out = self.dropout(out)
         out = F.avg_pool2d(out, 2)
         out = out.view(out.size(0), -1)
         out = self.linear(out)

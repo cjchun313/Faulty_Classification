@@ -13,7 +13,15 @@ def freeze_model(model, num_layers=6):
 
     return model
 
+def monte_carlo_dropout(model):
+    model.eval()
+    for m in model.modules():
+        if m.__class__.__name__.startswith('Dropout'):
+            m.train()
+
+    return model
+
 if __name__ == "__main__":
     model = ResNet18()
-    model = freeze_model(model, num_layers=6)
+    model = monte_carlo_dropout(model)
     summary(model, (3, 224, 224))
