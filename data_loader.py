@@ -30,16 +30,15 @@ class ImagevDatasetForClassi(Dataset):
 
             class_num += 1
 
-        '''
-        if mode == 'val':
+        if mode == 'val2':
             for unknown in tqdm(unknown_class):
                 imgfiles = sorted(glob(path + unknown + '/*.jpg'))
                 for imgfile in imgfiles:
                     self.x_data.append(np.array(Image.open(imgfile)))
-                    self.y_data.append(class_num)
+                    #self.y_data.append(class_num)
+                    self.y_data.append(5)
 
                 #class_num += 1
-        '''
 
         self.x_data = np.array(self.x_data)
         self.y_data = np.array(self.y_data)

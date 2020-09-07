@@ -1,6 +1,6 @@
+from tqdm import tqdm
 import argparse
-
-from models.resnet import ResNet18
+import numpy as np
 
 import torch
 from torch import nn
@@ -10,11 +10,18 @@ from torch.optim.lr_scheduler import StepLR
 from data_loader import ImagevDatasetForClassi
 from torch.utils.data import DataLoader
 
-
+from models.resnet import ResNet18
+from utils import monte_carlo_dropout, compute_acc, compute_confusion_matrix, compute_confidnce_interval
 
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
 
+MODEL_PATH = '../pth/20200906/model-21-0.000000-97.7778.pth'
+
+MEAN_VALUE = 0.006096079
+VAR_VALUE = 0.05440523
+STD_95_VALUE = 0.004255909
+STD_99_VALUE = 0.006101583
 
 
 
@@ -50,6 +57,8 @@ def train(model, train_loader, optimizer):
 
 def evaluate(model, test_loader):
     model.eval()
+    model = monte_carlo_dropout(model)
+
     correct = 0
     criterion = nn.CrossEntropyLoss().to(DEVICE)
 
@@ -68,6 +77,42 @@ def evaluate(model, test_loader):
 
     return test_loss, test_acc
 
+
+
+def predict(model, test_loader):
+    model.eval()
+    model = monte_carlo_dropout(model)
+
+    total_acc, total_cm = [], []
+    with torch.no_grad():
+        for data, target in tqdm(test_loader):
+            data, target = data.to(DEVICE, dtype=torch.float), target.to(DEVICE)
+
+            total_pred = []
+            for i in range(128):
+                output = model(data)
+                prediction = output.max(1, keepdim=True)[1]
+                total_pred.append(prediction.cpu().detach().numpy())
+
+            total_pred = np.squeeze(np.array(total_pred))
+            target = target.cpu().detach().numpy()
+            prediction = prediction.cpu().detach().numpy()
+            #print(np.mean(np.std(y_pred, axis=0)), np.std(np.std(y_pred, axis=0)))
+
+            prediction = compute_confidnce_interval(np.std(total_pred, axis=0), prediction, MEAN_VALUE, STD_95_VALUE)
+
+            acc = compute_acc(target, prediction)
+            total_acc.append(acc)
+            #print(acc)
+
+            cm = compute_confusion_matrix(target, prediction)
+            total_cm.append(cm)
+            #print(cm)
+
+    total_acc = np.mean(np.array(total_acc))
+    total_cm = np.sum(np.array(total_cm), axis=0)
+
+    return total_acc, total_cm
 
 
 def save_model(modelpath, model, optimizer, scheduler):
@@ -90,7 +135,7 @@ def load_model(modelpath, model, optimizer=None, scheduler=None):
     if scheduler is not None:
         scheduler.load_state_dict(state['scheduler'])
 
-    print('model loaded')
+    print('model loaded!')
 
 
 
@@ -143,11 +188,29 @@ def main(args):
             model = nn.DataParallel(model)
         model = model.to(DEVICE)
 
-        modelpath = '../pth/20200906/model.pth'
-        load_model(model, modelpath)
+        #modelpath = '../pth/20200906/model.pth'
+        load_model(MODEL_PATH, model)
 
         test_loss, test_acc = evaluate(model, val_dataloader)
         print('Test Loss:{:.6f}\tTest Acc:{:2.4f}'.format(test_loss, test_acc))
+    # predict
+    elif args.mode == 'predict':
+        val_dataset = ImagevDatasetForClassi(mode='val2')
+        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+        print(val_dataloader)
+
+        model = ResNet18()
+        if torch.cuda.device_count() > 1:
+            print('multi gpu used!')
+            model = nn.DataParallel(model)
+        model = model.to(DEVICE)
+
+        # modelpath = '../pth/20200906/model.pth'
+        load_model(MODEL_PATH, model)
+
+        acc, cm = predict(model, val_dataloader)
+        print('Accuracy:{:2.4f}'.format(acc))
+        print(cm)
 
 
 
@@ -175,7 +238,7 @@ if __name__ == '__main__':
         type=bool)
     parser.add_argument(
         '--mode',
-        help='train or evaluate',
+        help='train, evaluate, or predict',
         default='train',
         type=str)
 
