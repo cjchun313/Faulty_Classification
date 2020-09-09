@@ -79,40 +79,39 @@ def evaluate(model, test_loader):
 
 
 
-def predict(model, test_loader):
+def predict(model, test_loader, seed):
     model.eval()
-    model = monte_carlo_dropout(model)
+    #model = monte_carlo_dropout(model)
 
-    total_acc, total_cm = [], []
+    total_target, total_logit = [], []
     with torch.no_grad():
         for data, target in tqdm(test_loader):
             data, target = data.to(DEVICE, dtype=torch.float), target.to(DEVICE)
 
-            total_pred = []
-            for i in range(128):
-                output = model(data)
-                prediction = output.max(1, keepdim=True)[1]
-                total_pred.append(prediction.cpu().detach().numpy())
+            output = model(data)
+            prediction = output.max(1, keepdim=True)[1]
 
-            total_pred = np.squeeze(np.array(total_pred))
+            output = output.cpu().detach().numpy()
             target = target.cpu().detach().numpy()
-            prediction = prediction.cpu().detach().numpy()
-            #print(np.mean(np.std(y_pred, axis=0)), np.std(np.std(y_pred, axis=0)))
+            total_logit.append(output)
+            total_target.append(target)
+            #prediction = prediction.cpu().detach().numpy()
 
-            prediction = compute_confidnce_interval(np.std(total_pred, axis=0), prediction, MEAN_VALUE, STD_95_VALUE)
 
-            acc = compute_acc(target, prediction)
-            total_acc.append(acc)
+            #print(output)
+
+            #acc = compute_acc(target, prediction)
             #print(acc)
 
-            cm = compute_confusion_matrix(target, prediction)
-            total_cm.append(cm)
+            #cm = compute_confusion_matrix(target, prediction)
             #print(cm)
 
-    total_acc = np.mean(np.array(total_acc))
-    total_cm = np.sum(np.array(total_cm), axis=0)
+    total_logit = np.squeeze(np.array(total_logit))
+    total_target = np.array(total_target).reshape(-1, 1)
+    total_res = np.concatenate((total_target, total_logit), axis=1)
+    print(total_logit.shape, total_target.shape, total_res.shape)
 
-    return total_acc, total_cm
+    np.savetxt('train_output_' + str(seed).zfill(1) + '.txt', total_res, fmt='%3.6f')
 
 
 def save_model(modelpath, model, optimizer, scheduler):
@@ -195,7 +194,7 @@ def main(args):
         print('Test Loss:{:.6f}\tTest Acc:{:2.4f}'.format(test_loss, test_acc))
     # predict
     elif args.mode == 'predict':
-        val_dataset = ImagevDatasetForClassi(mode='val2')
+        val_dataset = ImagevDatasetForClassi(mode='train')
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
         print(val_dataloader)
 
@@ -208,9 +207,8 @@ def main(args):
         # modelpath = '../pth/20200906/model.pth'
         load_model(MODEL_PATH, model)
 
-        acc, cm = predict(model, val_dataloader)
-        print('Accuracy:{:2.4f}'.format(acc))
-        print(cm)
+        predict(model, val_dataloader, args.seed)
+
 
 
 
@@ -219,7 +217,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--batch_size',
         help='the number of mini-batch samples',
-        default=512,
+        default=1,
         type=int)
     parser.add_argument(
         '--epoch',
@@ -239,10 +237,19 @@ if __name__ == '__main__':
     parser.add_argument(
         '--mode',
         help='train, evaluate, or predict',
-        default='train',
+        default='predict',
         type=str)
+    parser.add_argument(
+        '--seed',
+        help='seed number',
+        default=0,
+        type=int)
 
     args = parser.parse_args()
     print(args)
+
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
 
     main(args)

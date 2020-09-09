@@ -30,15 +30,15 @@ class ImagevDatasetForClassi(Dataset):
 
             class_num += 1
 
-        if mode == 'val2':
+        if mode == 'train':
             for unknown in tqdm(unknown_class):
                 imgfiles = sorted(glob(path + unknown + '/*.jpg'))
                 for imgfile in imgfiles:
                     self.x_data.append(np.array(Image.open(imgfile)))
-                    #self.y_data.append(class_num)
-                    self.y_data.append(5)
+                    self.y_data.append(class_num)
+                    #self.y_data.append(5)
 
-                #class_num += 1
+                class_num += 1
 
         self.x_data = np.array(self.x_data)
         self.y_data = np.array(self.y_data)
@@ -57,12 +57,16 @@ class ImagevDatasetForClassi(Dataset):
 
 
 if __name__ == "__main__":
-    train_dataset = ImagevDatasetForClassi(mode='train')
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=0)
+    torch.manual_seed(0)
+    torch.cuda.manual_seed(0)
+    torch.backends.cudnn.deterministic = True
+
+    train_dataset = ImagevDatasetForClassi(mode='val')
+    train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=0)
     for batch_idx, samples in enumerate(train_loader):
         data, target = samples
         print(data.shape, target.shape)
-        print(torch.max(data), torch.min(data))
-        print(torch.max(target), torch.min(target))
+        print(torch.sum(data), torch.max(data), torch.min(data))
+        print(torch.sum(target), torch.max(target), torch.min(target))
 
         break
