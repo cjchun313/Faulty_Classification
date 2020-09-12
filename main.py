@@ -11,7 +11,8 @@ from data_loader import ImagevDatasetForClassi
 from torch.utils.data import DataLoader
 
 from models.resnet import ResNet18
-from utils import monte_carlo_dropout, compute_acc, compute_confusion_matrix, compute_confidnce_interval
+from utils import monte_carlo_dropout, compute_acc, compute_confusion_matrix, compute_confidnce_interval, compute_logit_distance
+from utils import extract_only_one_class, compute_euclidean_distance, compute_gumbel_r_mom, compute_gumbel_pdf, compute_gumbel_cdf, update_logit_from_cdf
 
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
@@ -83,7 +84,7 @@ def predict(model, test_loader, seed):
     model.eval()
     #model = monte_carlo_dropout(model)
 
-    total_target, total_logit = [], []
+    cnt = 0
     with torch.no_grad():
         for data, target in tqdm(test_loader):
             data, target = data.to(DEVICE, dtype=torch.float), target.to(DEVICE)
@@ -93,10 +94,24 @@ def predict(model, test_loader, seed):
 
             output = output.cpu().detach().numpy()
             target = target.cpu().detach().numpy()
-            total_logit.append(output)
-            total_target.append(target)
             #prediction = prediction.cpu().detach().numpy()
 
+            if cnt == 0:
+                logit_0 = extract_only_one_class(target, output, 0)
+                logit_1 = extract_only_one_class(target, output, 1)
+                logit_2 = extract_only_one_class(target, output, 2)
+                logit_3 = extract_only_one_class(target, output, 3)
+                logit_4 = extract_only_one_class(target, output, 4)
+
+                cnt += 1
+            else:
+                logit_0 = np.concatenate((logit_0, extract_only_one_class(target, output, 0)), axis=0)
+                logit_1 = np.concatenate((logit_1, extract_only_one_class(target, output, 1)), axis=0)
+                logit_2 = np.concatenate((logit_2, extract_only_one_class(target, output, 2)), axis=0)
+                logit_3 = np.concatenate((logit_3, extract_only_one_class(target, output, 3)), axis=0)
+                logit_4 = np.concatenate((logit_4, extract_only_one_class(target, output, 4)), axis=0)
+
+                cnt += 1
 
             #print(output)
 
@@ -106,12 +121,106 @@ def predict(model, test_loader, seed):
             #cm = compute_confusion_matrix(target, prediction)
             #print(cm)
 
-    total_logit = np.squeeze(np.array(total_logit))
-    total_target = np.array(total_target).reshape(-1, 1)
-    total_res = np.concatenate((total_target, total_logit), axis=1)
-    print(total_logit.shape, total_target.shape, total_res.shape)
+    logit_0 = np.squeeze(np.array(logit_0))
+    logit_1 = np.squeeze(np.array(logit_1))
+    logit_2 = np.squeeze(np.array(logit_2))
+    logit_3 = np.squeeze(np.array(logit_3))
+    logit_4 = np.squeeze(np.array(logit_4))
+    #print(logit_0.shape, logit_1.shape, logit_2.shape, logit_3.shape, logit_4.shape)
 
-    np.savetxt('train_output_' + str(seed).zfill(1) + '.txt', total_res, fmt='%3.6f')
+    mean_logit_0 = np.mean(logit_0, axis=0)
+    mean_logit_1 = np.mean(logit_1, axis=0)
+    mean_logit_2 = np.mean(logit_2, axis=0)
+    mean_logit_3 = np.mean(logit_3, axis=0)
+    mean_logit_4 = np.mean(logit_4, axis=0)
+    print(mean_logit_0)
+    print(mean_logit_1)
+    print(mean_logit_2)
+    print(mean_logit_3)
+    print(mean_logit_4)
+
+    logit_0 = compute_euclidean_distance(logit_0, mean_logit_0)
+    logit_1 = compute_euclidean_distance(logit_1, mean_logit_1)
+    logit_2 = compute_euclidean_distance(logit_2, mean_logit_2)
+    logit_3 = compute_euclidean_distance(logit_3, mean_logit_3)
+    logit_4 = compute_euclidean_distance(logit_4, mean_logit_4)
+    #print(logit_0.shape, logit_1.shape, logit_2.shape, logit_3.shape, logit_4.shape)
+
+    loc_0, scale_0 = compute_gumbel_r_mom(logit_0)
+    loc_1, scale_1 = compute_gumbel_r_mom(logit_1)
+    loc_2, scale_2 = compute_gumbel_r_mom(logit_2)
+    loc_3, scale_3 = compute_gumbel_r_mom(logit_3)
+    loc_4, scale_4 = compute_gumbel_r_mom(logit_4)
+    print(loc_0, scale_0)
+    print(loc_1, scale_1)
+    print(loc_2, scale_2)
+    print(loc_3, scale_3)
+    print(loc_4, scale_4)
+
+    #x = np.arange(0, 10, 0.01)
+    #print(x.shape)
+    #print(compute_gumbel_cdf(x, loc=loc_0, scale=scale_0))
+
+
+
+def predict2(model, test_loader, seed):
+    model.eval()
+    #model = monte_carlo_dropout(model)
+
+    mean_logits = [
+        [5.1635995,     -6.4268346,     2.3972373,      -1.5858468,     -3.5654037],
+        [-2.2015066,    37.41395,       -5.1897492,     -35.593792,     11.070286],
+        [-3.6411288,    -11.667751,     11.988806,      0.8579022,      -6.9625316],
+        [-4.024851,     -8.402394,      -3.8406122,     8.253992,       -3.2618928],
+        [-3.8793495,    -0.35262492,    -6.2018995,     -3.8200183,     10.935963]
+    ]
+    mean_logits = np.array(mean_logits)
+    #print(mean_logits.shape)
+
+    total_acc, total_cm = [], []
+    with torch.no_grad():
+        for data, target in tqdm(test_loader):
+            data, target = data.to(DEVICE, dtype=torch.float), target.to(DEVICE)
+
+            output = model(data)
+            prediction = output.max(1, keepdim=True)[1]
+
+            output = output.cpu().detach().numpy()
+            target = target.cpu().detach().numpy()
+            prediction = prediction.cpu().detach().numpy()
+
+            logit_0 = compute_euclidean_distance(output, mean_logits[0])
+            logit_1 = compute_euclidean_distance(output, mean_logits[1])
+            logit_2 = compute_euclidean_distance(output, mean_logits[2])
+            logit_3 = compute_euclidean_distance(output, mean_logits[3])
+            logit_4 = compute_euclidean_distance(output, mean_logits[4])
+            #print(logit_0.shape, logit_1.shape, logit_2.shape, logit_3.shape, logit_4.shape)
+
+            cdf_0 = compute_gumbel_cdf(logit_0, loc=1.23504581711539, scale=0.890690418041288)
+            cdf_1 = compute_gumbel_cdf(logit_1, loc=4.69870809919228, scale=2.72121064947818)
+            cdf_2 = compute_gumbel_cdf(logit_2, loc=4.23566709581643, scale=2.09320085466454)
+            cdf_3 = compute_gumbel_cdf(logit_3, loc=1.52365110518514, scale=0.771770951799924)
+            cdf_4 = compute_gumbel_cdf(logit_4, loc=3.93608164456129, scale=1.97732504677074)
+            #print(cdf_0.shape, cdf_1.shape, cdf_2.shape, cdf_3.shape, cdf_4.shape)
+
+            update_output = update_logit_from_cdf(output, cdf_0, cdf_1, cdf_2, cdf_3, cdf_4)
+            #print(update_output.shape)
+
+            update_pred = np.argmax(update_output, axis=-1)
+            #print(update_pred.shape)
+
+            acc = compute_acc(target, update_pred)
+            total_acc.append(acc)
+            #print(acc)
+
+            cm = compute_confusion_matrix(target, update_pred)
+            total_cm.append(cm)
+            #print(cm)
+
+    total_acc = np.mean(np.array(total_acc))
+    total_cm = np.sum(np.array(total_cm), axis=0)
+
+    return total_acc, total_cm
 
 
 def save_model(modelpath, model, optimizer, scheduler):
@@ -194,7 +303,7 @@ def main(args):
         print('Test Loss:{:.6f}\tTest Acc:{:2.4f}'.format(test_loss, test_acc))
     # predict
     elif args.mode == 'predict':
-        val_dataset = ImagevDatasetForClassi(mode='train')
+        val_dataset = ImagevDatasetForClassi(mode='val2')
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
         print(val_dataloader)
 
@@ -207,8 +316,9 @@ def main(args):
         # modelpath = '../pth/20200906/model.pth'
         load_model(MODEL_PATH, model)
 
-        predict(model, val_dataloader, args.seed)
-
+        acc, cm = predict2(model, val_dataloader, seed=0)
+        print('Accuracy:{:2.4f}'.format(acc))
+        print(cm)
 
 
 
@@ -217,7 +327,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--batch_size',
         help='the number of mini-batch samples',
-        default=1,
+        default=512,
         type=int)
     parser.add_argument(
         '--epoch',
