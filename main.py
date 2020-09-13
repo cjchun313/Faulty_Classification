@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 from models.resnet import ResNet18
 from utils import monte_carlo_dropout, compute_acc, compute_confusion_matrix, compute_confidnce_interval, compute_logit_distance
-from utils import extract_only_one_class, compute_euclidean_distance, compute_gumbel_r_mom, compute_gumbel_pdf, compute_gumbel_cdf, update_logit_from_cdf
+from utils import extract_only_one_class, compute_euclidean_distance, compute_loc_scale, compute_pdf, compute_cdf, update_logit_from_cdf, extract_maximum_samples
 
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
@@ -133,24 +133,30 @@ def predict(model, test_loader, seed):
     mean_logit_2 = np.mean(logit_2, axis=0)
     mean_logit_3 = np.mean(logit_3, axis=0)
     mean_logit_4 = np.mean(logit_4, axis=0)
-    print(mean_logit_0)
-    print(mean_logit_1)
-    print(mean_logit_2)
-    print(mean_logit_3)
-    print(mean_logit_4)
+    #print(mean_logit_0)
+    #print(mean_logit_1)
+    #print(mean_logit_2)
+    #print(mean_logit_3)
+    #print(mean_logit_4)
 
     logit_0 = compute_euclidean_distance(logit_0, mean_logit_0)
     logit_1 = compute_euclidean_distance(logit_1, mean_logit_1)
     logit_2 = compute_euclidean_distance(logit_2, mean_logit_2)
     logit_3 = compute_euclidean_distance(logit_3, mean_logit_3)
     logit_4 = compute_euclidean_distance(logit_4, mean_logit_4)
+
+    logit_0 = extract_maximum_samples(logit_0)
+    logit_1 = extract_maximum_samples(logit_1)
+    logit_2 = extract_maximum_samples(logit_2)
+    logit_3 = extract_maximum_samples(logit_3)
+    logit_4 = extract_maximum_samples(logit_4)
     #print(logit_0.shape, logit_1.shape, logit_2.shape, logit_3.shape, logit_4.shape)
 
-    loc_0, scale_0 = compute_gumbel_r_mom(logit_0)
-    loc_1, scale_1 = compute_gumbel_r_mom(logit_1)
-    loc_2, scale_2 = compute_gumbel_r_mom(logit_2)
-    loc_3, scale_3 = compute_gumbel_r_mom(logit_3)
-    loc_4, scale_4 = compute_gumbel_r_mom(logit_4)
+    loc_0, scale_0 = compute_loc_scale(logit_0)
+    loc_1, scale_1 = compute_loc_scale(logit_1)
+    loc_2, scale_2 = compute_loc_scale(logit_2)
+    loc_3, scale_3 = compute_loc_scale(logit_3)
+    loc_4, scale_4 = compute_loc_scale(logit_4)
     print(loc_0, scale_0)
     print(loc_1, scale_1)
     print(loc_2, scale_2)
@@ -196,11 +202,11 @@ def predict2(model, test_loader, seed):
             logit_4 = compute_euclidean_distance(output, mean_logits[4])
             #print(logit_0.shape, logit_1.shape, logit_2.shape, logit_3.shape, logit_4.shape)
 
-            cdf_0 = compute_gumbel_cdf(logit_0, loc=1.23504581711539, scale=0.890690418041288)
-            cdf_1 = compute_gumbel_cdf(logit_1, loc=4.69870809919228, scale=2.72121064947818)
-            cdf_2 = compute_gumbel_cdf(logit_2, loc=4.23566709581643, scale=2.09320085466454)
-            cdf_3 = compute_gumbel_cdf(logit_3, loc=1.52365110518514, scale=0.771770951799924)
-            cdf_4 = compute_gumbel_cdf(logit_4, loc=3.93608164456129, scale=1.97732504677074)
+            cdf_0 = compute_cdf(logit_0, loc=8.14270894144533, scale=0.93095837785171)
+            cdf_1 = compute_cdf(logit_1, loc=21.0262201711518, scale=3.75571104423795)
+            cdf_2 = compute_cdf(logit_2, loc=15.4967491395581, scale=2.12280311804112)
+            cdf_3 = compute_cdf(logit_3, loc=7.32319792999298, scale=0.602116244212654)
+            cdf_4 = compute_cdf(logit_4, loc=11.3360356718282, scale=1.40106148409611)
             #print(cdf_0.shape, cdf_1.shape, cdf_2.shape, cdf_3.shape, cdf_4.shape)
 
             update_output = update_logit_from_cdf(output, cdf_0, cdf_1, cdf_2, cdf_3, cdf_4)
@@ -316,6 +322,7 @@ def main(args):
         # modelpath = '../pth/20200906/model.pth'
         load_model(MODEL_PATH, model)
 
+        #predict(model, val_dataloader, seed=0)
         acc, cm = predict2(model, val_dataloader, seed=0)
         print('Accuracy:{:2.4f}'.format(acc))
         print(cm)

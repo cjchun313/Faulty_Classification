@@ -2,7 +2,7 @@ from models.resnet import ResNet18
 from torchsummary import summary
 
 import numpy as np
-from scipy.stats import gumbel_r
+from scipy.stats import gumbel_r, weibull_min
 from sklearn.metrics import accuracy_score, confusion_matrix
 
 
@@ -52,18 +52,33 @@ def compute_logit_distance(y_true, y_logit, class_idx):
 def extract_only_one_class(y_true, y_logit, class_idx):
     return y_logit[y_true == class_idx]
 
-def compute_gumbel_r_mom(x):
-    loc, scale = gumbel_r.fit(x)
+def extract_maximum_samples(x, num=20):
+    x = sorted(x)
+
+    return np.array(x[-num:])
+
+def compute_loc_scale(x, mode='weibull'):
+    if mode == 'weibull':
+        #loc, scale = weibull_min.fit_loc_scale(x, 1, 1)
+        _, loc, scale = weibull_min.fit(x)
+    elif mode == 'gumbel':
+        loc, scale = gumbel_r.fit(x)
 
     return loc, scale
 
-def compute_gumbel_pdf(x, loc, scale, c=0.1):
-    pdf = gumbel_r.pdf(x, loc=loc, scale=scale)
+def compute_pdf(x, loc, scale, mode='weibull'):
+    if mode == 'weibull':
+        pdf = weibull_min.pdf(x, loc=loc, scale=scale, c=1)
+    elif mode == 'gumbel':
+        pdf = gumbel_r.pdf(x, loc=loc, scale=scale)
 
     return pdf
 
-def compute_gumbel_cdf(x, loc, scale, c=0.1):
-    cdf = gumbel_r.cdf(x, loc=loc, scale=scale)
+def compute_cdf(x, loc, scale, mode='weibull'):
+    if mode == 'weibull':
+        cdf = weibull_min.cdf(x, loc=loc, scale=scale, c=1)
+    elif mode == 'gumbel':
+        cdf = gumbel_r.cdf(x, loc=loc, scale=scale)
 
     return cdf
 
